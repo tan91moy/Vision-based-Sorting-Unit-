@@ -1,3 +1,6 @@
 ultralytics==8.0.0  # For YOLOv8
 opencv-python==4.5.5.64  # For image processing
 numpy==1.24.0  # For numerical computations
+onnxruntime==1.13.1  # For running ONNX models
+hailo==1.9.0  # For Hailo AI SDK (adjust version as needed)
+
