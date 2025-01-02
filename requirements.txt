@@ -1,0 +1,3 @@
+ultralytics==8.0.0  # For YOLOv8
+opencv-python==4.5.5.64  # For image processing
+numpy==1.24.0  # For numerical computations
