@@ -1,8 +1,10 @@
 import RPi.GPIO as GPIO
 import time
+from threading import Timer
+from conveyor import ConveyorBelt  # Import ConveyorBelt to access speed
 
 class Sorter:
-    def __init__(self, servo_pin=18, bolt_angle=0, nut_angle=90, default_angle=45):
+    def __init__(self, servo_pin=18, bolt_angle=0, nut_angle=90, default_angle=45, conveyor=None, distance_to_flapper=0.5):
         """
         Initialize sorting system with GPIO and servo control.
 
@@ -10,11 +12,15 @@ class Sorter:
         :param bolt_angle: Angle for sorting bolts.
         :param nut_angle: Angle for sorting nuts.
         :param default_angle: Default angle position.
+        :param conveyor: ConveyorBelt instance for speed tracking.
+        :param distance_to_flapper: Distance between the camera and sorting flapper in meters.
         """
         self.servo_pin = servo_pin
         self.bolt_angle = bolt_angle
         self.nut_angle = nut_angle
         self.default_angle = default_angle
+        self.conveyor = conveyor
+        self.distance_to_flapper = distance_to_flapper
 
         # Set up GPIO
         GPIO.setmode(GPIO.BCM)
@@ -24,6 +30,17 @@ class Sorter:
 
         # Move servo to the default position
         self.move_to_angle(self.default_angle)
+
+    def calculate_travel_time(self):
+        """
+        Calculate the travel time from the camera to the flapper based on conveyor speed.
+
+        :return: Travel time in seconds.
+        """
+        if self.conveyor and self.conveyor.speed > 0:
+            return self.distance_to_flapper / self.conveyor.speed
+        else:
+            raise ValueError("Conveyor speed must be greater than 0.")
 
     def move_to_angle(self, angle):
         """
@@ -36,9 +53,9 @@ class Sorter:
         print(f"Moving servo to {angle} degrees.")
         time.sleep(0.5)  # Allow the servo to reach the target position
 
-    def sort(self, object_type):
+    def actuate_flapper(self, object_type):
         """
-        Sort the object based on its type (either 'bolt' or 'nut').
+        Actuate the flapper based on the object type (either 'bolt' or 'nut').
 
         :param object_type: The detected object type ('bolt' or 'nut').
         """
@@ -61,9 +78,11 @@ class Sorter:
 
         :param detected_classes: List of detected classes (e.g., ['bolt', 'nut']).
         """
+        travel_time = self.calculate_travel_time()
+
         for detected_class in detected_classes:
-            print(f"Detected: {detected_class}")
-            self.sort(detected_class)
+            print(f"Detected: {detected_class}. Actuation in {travel_time:.2f} seconds.")
+            Timer(travel_time, self.actuate_flapper, args=(detected_class,)).start()
 
     def cleanup(self):
         """
@@ -77,8 +96,12 @@ class Sorter:
 # Example usage
 if __name__ == "__main__":
     try:
-        # Initialize sorter with GPIO pin 18 for servo control
-        sorter = Sorter(servo_pin=18)
+        # Initialize conveyor and sorter
+        conveyor = ConveyorBelt()
+        conveyor.set_speed(0.2)  # Set initial speed of the conveyor
+        conveyor.start()
+
+        sorter = Sorter(servo_pin=18, conveyor=conveyor)
 
         # Simulate integration with HailoObjectDetector
         detected_classes = ["bolt", "nut", "bolt"]  # Example detected classes
@@ -89,3 +112,21 @@ if __name__ == "__main__":
 
     finally:
         sorter.cleanup()  # Clean up when done
+        conveyor.cleanup()
+
+
+# Integration with ConveyorBelt:
+
+# Added a conveyor parameter to the Sorter class to access its speed dynamically.
+# Dynamic Travel Time Calculation:
+
+# The calculate_travel_time method calculates the travel time based on the conveyor's current speed and the distance to the flapper.
+# Timer for Actuation:
+
+# Uses Python's Timer to delay flapper actuation until the detected object reaches the flapper.
+# Synchronization with Conveyor:
+
+# The sorter adjusts automatically when the conveyor speed changes.
+# Example Usage:
+
+# Demonstrates initializing the conveyor and sorter and handling mock detection events.

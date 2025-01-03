@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 import hailo_platform.pyhailort as hailort
+import threading
+import queue
 
 class HailoObjectDetector:
     def __init__(self, hailo_hef_path, conf_threshold=0.25, iou_threshold=0.45):
@@ -14,6 +16,11 @@ class HailoObjectDetector:
             "screw_head": "bolt"
         }
         self._load_hailo_pipeline()
+
+        # Threading components
+        self.frame_queue = queue.Queue(maxsize=10)  # Queue for frames to process
+        self.result_queue = queue.Queue()  # Queue for detection results
+        self.stop_thread = False
 
     def _load_hailo_pipeline(self):
         try:
@@ -78,20 +85,56 @@ class HailoObjectDetector:
             detection["class"] = self.class_mapping.get(original_class, "unknown")
         return detections
 
+    def _inference_thread(self):
+        """Thread that handles inference."""
+        while not self.stop_thread:
+            if not self.frame_queue.empty():
+                frame = self.frame_queue.get()
+                input_tensor = self._hailo_preprocess(frame)
+
+                raw_outputs = []
+                with self.device:
+                    for vstream in self.vstreams:
+                        raw_outputs = vstream.write_and_read(input_tensor)
+
+                detections = self._hailo_postprocess(raw_outputs, frame.shape)
+                detections = self._map_classes(detections)
+
+                self.result_queue.put(detections)  # Add results to the queue
+
+    def start_inference(self):
+        """Starts the inference thread."""
+        self.stop_thread = False
+        self.inference_thread = threading.Thread(target=self._inference_thread, daemon=True)
+        self.inference_thread.start()
+
+    def stop_inference(self):
+        """Stops the inference thread."""
+        self.stop_thread = True
+        self.inference_thread.join()
+
     def detect_objects(self, frame):
-        input_tensor = self._hailo_preprocess(frame)
+        """Detect objects using Hailo and return detection results."""
+        self.frame_queue.put(frame)  # Put the frame into the processing queue
+        if not self.result_queue.empty():
+            detections = self.result_queue.get()  # Get results from the result queue
+            detected_classes = [detection["class"] for detection in detections]
+            return detected_classes
+        return []
 
-        raw_outputs = []
-        with self.device:
-            for vstream in self.vstreams:
-                raw_outputs = vstream.write_and_read(input_tensor)
+# Example usage:
+if __name__ == "__main__":
+    hailo_detector = HailoObjectDetector("/path/to/your/hef/file")
+    hailo_detector.start_inference()
 
-        detections = self._hailo_postprocess(raw_outputs, frame.shape)
-        detections = self._map_classes(detections)
+    # Simulate continuous frame capture
+    for _ in range(10):  # Assume 10 frames
+        frame = np.random.rand(640, 640, 3) * 255  # Simulated random frame (replace with actual frame capture)
+        detected_classes = hailo_detector.detect_objects(frame)
+        print("Detected Classes:", detected_classes)
 
-        detected_classes = [detection["class"] for detection in detections]
-        return detected_classes
-
+    hailo_detector.stop_inference()
+    hailo_detector.cleanup()
 
 
 
@@ -135,3 +178,16 @@ class HailoObjectDetector:
 # Ensure the Hailo HEF file is available and correctly configured.
 # Install the pyhailort library on your Raspberry Pi (pip install pyhailort).
 # Update any path-specific variables to reflect your actual file locations.
+
+
+# Changes Introduced:
+# Queue for Frame Handling: A queue (frame_queue) is used to handle frames being processed. The inference thread consumes frames from the queue while the main thread can keep adding frames to be processed.
+# Inference in a Separate Thread: The inference (preprocessing, model execution, postprocessing) is done in a separate thread (_inference_thread). This allows the system to continuously process frames while maintaining responsiveness.
+# Result Queue: A result_queue is used to fetch the detection results from the inference thread asynchronously.
+# Graceful Start and Stop: The start_inference() and stop_inference() methods manage the start/stop of the inference thread, allowing you to control when inference begins and ends.
+# Performance Improvement:
+# By using threading in this way, the system can:
+
+# Continuously capture and send frames for processing without waiting for each frame to finish processing before moving to the next one.
+# Improve real-time performance in high-speed environments.
+# Keep the inference pipeline non-blocking and responsive.

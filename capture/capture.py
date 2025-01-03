@@ -1,6 +1,7 @@
 import cv2
 import time
 import threading
+from hailo_object_detector import HailoObjectDetector  # Make sure to import your detector class
 
 class CameraCapture:
     def __init__(self, camera_id=0, width=640, height=480, fps=30, detection_callback=None):
@@ -68,9 +69,7 @@ class CameraCapture:
 
             # Perform object detection using the callback
             if self.detection_callback:
-                detected_classes = self.detection_callback(frame)
-                if detected_classes:
-                    print(f"Detected objects: {detected_classes}")
+                self.detection_callback(frame)  # This will draw boxes on the frame
 
             # Display the frame (optional)
             cv2.imshow("Camera Feed", frame)
@@ -108,20 +107,38 @@ class CameraCapture:
         self.cleanup()
 
 
+# Detection callback function that uses HailoObjectDetector
+def detection_callback(frame):
+    """
+    Detection callback function that processes each captured frame using HailoObjectDetector.
+
+    :param frame: The current frame captured from the camera.
+    :return: None (frame is modified directly with bounding boxes and class labels).
+    """
+    # Initialize your HailoObjectDetector (make sure the .hef path is correct)
+    detector = HailoObjectDetector(hailo_hef_path='/path/to/your/model.hef')
+
+    # Detect objects in the frame, get bounding boxes, class labels, and probabilities
+    detections = detector.detect_objects(frame)
+
+    # Process detections: list of (bounding_box, class_name, probability)
+    for detection in detections:
+        bbox, class_name, probability = detection['bbox'], detection['class_name'], detection['probability']
+        
+        # Draw bounding box
+        x1, y1, x2, y2 = bbox
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)  # Draw green bounding box
+
+        # Display class name and probability
+        label = f"{class_name}: {probability:.2f}"
+        cv2.putText(frame, label, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+    # No need to return anything as the frame is modified directly
+
+
 # Example usage
 if __name__ == "__main__":
-    def mock_detection_callback(frame):
-        """
-        Mock detection callback function to simulate HailoObjectDetector processing.
-
-        :param frame: The current frame captured from the camera.
-        :return: List of detected objects (mocked).
-        """
-        # Simulate detection processing
-        time.sleep(0.1)  # Simulate inference time
-        return ["object1", "object2"]  # Mock detected objects
-
-    camera = CameraCapture(width=1280, height=720, fps=30, detection_callback=mock_detection_callback)
+    camera = CameraCapture(width=1280, height=720, fps=30, detection_callback=detection_callback)
 
     try:
         camera.initialize_camera()
@@ -153,27 +170,20 @@ if __name__ == "__main__":
 
 # The script shows the camera feed and provides instructions to press 'q' to quit.
 
-# Key Updates:
-# Detection Callback Integration:
-
-# Added a detection_callback parameter to the CameraCapture class. This callback is responsible for receiving a captured frame and returning detected object classes.
-# Real-Time Detection:
-
-# capture_and_detect() captures frames continuously and sends them to the detection_callback for processing (e.g., HailoObjectDetector).
-# Error Handling:
-
-# Added logic to retry frame capture if it fails.
-# Mock Detection Callback:
-
-# Included a mock detection function (mock_detection_callback) for testing without actual object detection integration.
-# Frame Display:
 
 # The cv2.imshow() call displays the live camera feed for debugging and visualization purposes.
-# Clean Resource Management:
 
-# Ensures proper release of camera resources with the cleanup() method and destructor.
-# Integration with HailoObjectDetector:
-# To integrate with HailoObjectDetector:
 
-# Replace mock_detection_callback with a function that utilizes HailoObjectDetector to process the captured frame and return detected object classes.
-# Ensure that the HailoObjectDetector is initialized and accessible in the callback function.
+
+
+# Key Changes:
+# Bounding Box Drawing: In the detection_callback, each detection contains a bounding box (bbox), class name (class_name), and probability (probability). The bounding box is drawn using cv2.rectangle(), and the class name along with the probability score is displayed using cv2.putText().
+
+# Detection Results: The detections list is assumed to be in the format {'bbox': (x1, y1, x2, y2), 'class_name': 'object_name', 'probability': score}. Adjust the structure according to the actual output format from HailoObjectDetector.
+
+# Example Detection:
+# A bounding box is drawn in green around the detected object.
+# The class label and its probability (formatted to two decimal places) are displayed above the bounding box.
+# Things to Adjust:
+# Ensure that the path to the .hef model is correctly set in the HailoObjectDetector initialization (hailo_hef_path='/path/to/your/model.hef').
+# The detection output format should match what the detect_objects method of your HailoObjectDetector returns. If the structure is different, modify how bounding boxes, class names, and probabilities are accessed.
