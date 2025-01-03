@@ -1,4 +1,5 @@
 import threading
+from queue import Queue
 from conveyor import ConveyorBelt
 from capture import CameraCapture
 from hailo_detector import HailoObjectDetector
@@ -29,7 +30,7 @@ class SortingSystem:
         self.sorter = Sorter(servo_pin=18, bolt_angle=90, nut_angle=0, default_angle=45)
 
         self.running = False
-        self.detected_objects = []
+        self.detected_objects_queue = Queue()  # Queue to store detected objects for sorting
 
     def initialize_system(self):
         """
@@ -48,18 +49,37 @@ class SortingSystem:
         detected_objects = self.detector.detect(frame)
         if detected_objects:
             print(f"Detected objects: {detected_objects}")
-            self.detected_objects = detected_objects  # Store detected objects for sorting
-            self.sort_objects()  # Sort objects immediately after detection
-
-        return detected_objects
+            for obj in detected_objects:
+                self.detected_objects_queue.put(obj)  # Add each detected object to the queue
 
     def sort_objects(self):
         """
         Sort objects based on their type and detected objects.
         """
-        for detected_object in self.detected_objects:
+        while not self.detected_objects_queue.empty():
+            detected_object = self.detected_objects_queue.get()  # Retrieve an object from the queue
             print(f"Sorting object: {detected_object}")
             self.sorter.handle_detection([detected_object])
+
+    def conveyor_thread_func(self):
+        """
+        Start the conveyor in a separate thread.
+        """
+        try:
+            self.conveyor.start()
+        except Exception as e:
+            print(f"Error in conveyor thread: {e}")
+            self.stop_sorting()
+
+    def camera_thread_func(self):
+        """
+        Capture frames and detect objects in a separate thread.
+        """
+        try:
+            self.camera.capture_and_detect()
+        except Exception as e:
+            print(f"Error in camera thread: {e}")
+            self.stop_sorting()
 
     def start_sorting(self):
         """
@@ -67,15 +87,22 @@ class SortingSystem:
         """
         self.running = True
         print("Starting sorting system...")
-        
-        # Start the conveyor in a separate thread to run concurrently
-        conveyor_thread = threading.Thread(target=self.conveyor.start)
+
+        # Start the conveyor in a separate thread
+        conveyor_thread = threading.Thread(target=self.conveyor_thread_func)
         conveyor_thread.daemon = True  # Make it a daemon thread so it stops when the main program stops
         conveyor_thread.start()
 
+        # Start the camera capture and detection in a separate thread
+        camera_thread = threading.Thread(target=self.camera_thread_func)
+        camera_thread.daemon = True  # Make it a daemon thread
+        camera_thread.start()
+
+        # Main thread continuously processes detected objects for sorting
         try:
-            # Start camera and detection in the main thread, capturing frames continuously
-            self.camera.capture_and_detect()
+            while self.running:
+                self.sort_objects()  # Check and sort objects in the queue
+                time.sleep(1)  # Small delay to prevent high CPU usage
         except KeyboardInterrupt:
             print("Stopping sorting system...")
         finally:
@@ -118,6 +145,7 @@ if __name__ == "__main__":
     else:
         print("Invalid choice. Exiting...")
 
+
 # Steps for Improving Integration
 # Threading for Concurrent Operations:
 
@@ -152,3 +180,23 @@ if __name__ == "__main__":
 # Object Detection Latency: The speed of detection may affect the conveyor's motion, so you'll need to adjust the conveyor speed if the system detects objects too slowly.
 # Servo Response Time: Depending on how fast the servo can move to different angles, you might need to adjust the move_to_angle function in sorter.py to give the servo enough time to settle before the next operation begins.
 # Multiple Objects: Ensure the system handles multiple objects being detected in quick succession. You may want to add a mechanism to handle simultaneous detection and sorting requests if needed.
+
+# Camera and Conveyor in Separate Threads:
+
+# The camera capture (camera.capture_and_detect()) and conveyor (conveyor.start()) operations are moved to separate threads to allow parallel execution.
+# These threads are set to be daemon threads, ensuring they stop when the main program ends.
+# Queue for Detected Objects:
+
+# Detected objects are added to a Queue (self.detected_objects_queue) in the detect_and_sort method.
+# The sort_objects method processes objects from this queue, ensuring objects are handled in a thread-safe manner.
+# Error Handling in Threads:
+
+# Exception handling has been added to both the conveyor and camera threads to prevent the system from crashing if an error occurs in either thread.
+# Efficient Sorting Loop:
+
+# The start_sorting method uses a while self.running loop to continuously process objects from the queue in the main thread.
+# A small delay (time.sleep(1)) is added to reduce CPU usage while waiting for new objects to be detected.
+# Benefits:
+# Concurrent Operations: The conveyor and camera operations are now handled in parallel, improving system responsiveness.
+# Thread-Safe Object Sorting: The queue ensures that detected objects are processed in order, without race conditions.
+# Improved Error Handling: The system is more robust with error handling in the threads.
