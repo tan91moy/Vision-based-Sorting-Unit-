@@ -95,7 +95,7 @@ VisionSort-RPi is a DIY conveyor belt system designed to showcase real-world app
 ## 📩 Contact
 I’m excited to connect and collaborate!  
 - **Email**: [tan91moy@gmail.com](mailto:your.email@example.com)  
-- **LinkedIn**: [https://www.linkedin.com/in/tanmoy-haldar/](https://linkedin.com/in/yourprofile)  
+- **LinkedIn**: [https://www.linkedin.com/in/tanmoy-haldar-127a267b](https://linkedin.com/in/yourprofile)  
 - **GitHub**: [https://github.com/tan91moy/Vision-based-Sorting-Unit-](https://github.com/yourusername)
 
 ---
